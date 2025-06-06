@@ -1,5 +1,15 @@
+import os
 import openai
 import logging
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+# Get API key from environment
+api_key = os.getenv("OPENAI_API_KEY")
+if not api_key:
+    raise ValueError("OpenAI API key not found. Please set OPENAI_API_KEY environment variable.")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -7,9 +17,7 @@ logger = logging.getLogger(__name__)
 def test_openai():
     try:
         # Initialize client
-        client = openai.OpenAI(
-            api_key="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"
-        )
+        client = openai.OpenAI(api_key=api_key)
         logger.info("OpenAI client initialized successfully")
         
         # Test a simple API call

@@ -18,8 +18,10 @@ load_dotenv()
 
 class LLMGenerator:
     def __init__(self, api_key: Optional[str] = None):
-        # Hardcoded API key
-        self.api_key = "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"
+        # Get API key from environment variable
+        self.api_key = api_key or os.getenv("OPENAI_API_KEY")
+        if not self.api_key:
+            raise ValueError("OpenAI API key not found. Please set OPENAI_API_KEY environment variable.")
             
         logger.info(f"Initializing LLMGenerator with API key length: {len(self.api_key)}")
         
