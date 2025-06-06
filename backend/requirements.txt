@@ -1,0 +1,19 @@
+fastapi==0.104.1
+uvicorn==0.24.0
+requests==2.31.0
+beautifulsoup4==4.12.2
+openai==1.3.0
+python-dotenv==1.0.0
+pydantic>=2.5.0
+python-multipart==0.0.6
+aiohttp==3.9.1
+# For potential cloud browser integration
+playwright==1.49.1
+# For actual Claude API integration (when ready)
+anthropic==0.42.0
+# For better async support
+asyncio==3.4.3
+# For caching
+aioredis==2.0.1
+# For better logging
+loguru==0.7.3

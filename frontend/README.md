@@ -1,22 +1,36 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Orchids Website Cloner Frontend
 
-## Getting Started
+This is the Next.js frontend for the AI Website Cloner.
 
-First, run the development server:
+## Requirements
+- Node.js 18+
+- npm
+- The backend server running (see backend/README.md)
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+## Setup
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+1. **Install dependencies:**
+   ```bash
+   npm install
+   ```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+2. **Start the development server:**
+   ```bash
+   npm run dev
+   ```
+
+3. **Open your browser:**
+   Visit [http://localhost:3000](http://localhost:3000)
+
+## How it Works
+- Enter a website URL in the form.
+- The frontend sends the URL to the backend (`/clone`).
+- The backend scrapes the site, generates HTML using Claude, and returns the result.
+- The frontend displays the cloned HTML.
+
+## Notes
+- Make sure the backend is running and accessible at `http://localhost:8000` (default).
+- You can adjust the backend URL in the frontend code if needed.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
