@@ -15,4 +15,9 @@ export interface CloneStatus {
 
 export interface CloneRequest {
   url: string;
+}
+
+export interface ErrorResponse {
+  detail?: string;
+  [key: string]: any;
 } 

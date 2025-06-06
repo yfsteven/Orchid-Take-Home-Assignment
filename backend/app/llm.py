@@ -6,6 +6,8 @@ from pathlib import Path
 import os
 from dotenv import load_dotenv
 import httpx
+import time
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -32,84 +34,133 @@ class LLMGenerator:
             logger.error(f"Failed to initialize OpenAI client: {str(e)}")
             raise
 
+    @retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=5, min=10, max=120))
+    def _call_openai(self, messages: List[Dict], max_tokens: int = 1000) -> str:
+        """Make an API call to OpenAI with retries and longer delays."""
+        try:
+            # Add a delay before each attempt to avoid rate limits
+            time.sleep(5)
+            
+            response = self.client.chat.completions.create(
+                model="gpt-4",
+                messages=messages,
+                temperature=0.7,
+                max_tokens=max_tokens
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            logger.error(f"OpenAI API call failed: {str(e)}")
+            # Add extra delay on error
+            time.sleep(10)
+            raise
+
+    def _truncate_text(self, text: str, max_chars: int = 500) -> str:
+        """Truncate text to a maximum number of characters, adding ellipsis if needed."""
+        if len(text) > max_chars:
+            return text[:max_chars] + "... [truncated]"
+        return text
+
+    def _truncate_json(self, data, max_chars: int = 500) -> str:
+        """Truncate a JSON-serializable object to a string of max_chars."""
+        s = json.dumps(data, indent=2)
+        return self._truncate_text(s, max_chars)
+
     def generate_website_code(self, scraped_data: Dict) -> Dict:
         """
         Generate website code based on scraped data using LLM.
+        Truncate or chunk data to avoid exceeding context length.
         """
         try:
-            # Prepare the prompt
-            prompt = self._create_prompt(scraped_data)
-            logger.info("Sending request to OpenAI API...")
-            
-            # Call the LLM using the new OpenAI API client
-            response = self.client.chat.completions.create(
-                model="gpt-4",
-                messages=[
-                    {"role": "system", "content": "You are a web development expert. Generate modern, responsive website code based on the provided design data."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.7,
-                max_tokens=2000
-            )
-            
-            logger.info("Received response from OpenAI API")
-            # Parse the response using the new API response structure
-            generated_code = response.choices[0].message.content
-            
-            # Extract HTML, CSS, and JavaScript
-            return self._parse_generated_code(generated_code)
-            
+            # Truncate raw_html and styles if present
+            if 'raw_html' in scraped_data:
+                scraped_data['raw_html'] = self._truncate_text(scraped_data['raw_html'], 500)
+            if 'styles' in scraped_data and 'inline_styles' in scraped_data['styles']:
+                scraped_data['styles']['inline_styles'] = [self._truncate_text(s, 250) for s in scraped_data['styles']['inline_styles']]
+
+            # Generate HTML first
+            html_prompt = self._create_html_prompt(scraped_data)
+            logger.info("Generating HTML structure...")
+            html_code = self._call_openai([
+                {"role": "system", "content": "You are a web development expert. Generate clean, semantic HTML structure based on the provided design data."},
+                {"role": "user", "content": html_prompt}
+            ])
+
+            time.sleep(5)  # Increased delay between calls
+
+            # Generate CSS
+            css_prompt = self._create_css_prompt(scraped_data)
+            logger.info("Generating CSS styles...")
+            css_code = self._call_openai([
+                {"role": "system", "content": "You are a CSS expert. Generate modern, responsive CSS styles based on the provided design data."},
+                {"role": "user", "content": css_prompt}
+            ])
+
+            time.sleep(5)  # Increased delay between calls
+
+            # Generate JavaScript
+            js_prompt = self._create_js_prompt(scraped_data)
+            logger.info("Generating JavaScript...")
+            js_code = self._call_openai([
+                {"role": "system", "content": "You are a JavaScript expert. Generate clean, modern JavaScript code for interactivity based on the provided design data."},
+                {"role": "user", "content": js_prompt}
+            ])
+
+            return {
+                'html': html_code,
+                'css': css_code,
+                'javascript': js_code
+            }
         except Exception as e:
             logger.error(f"Error generating website code: {str(e)}")
             raise
 
-    def _create_prompt(self, scraped_data: Dict) -> str:
-        """Create a prompt for the LLM based on scraped data."""
-        prompt = f"""
-        Generate a modern, responsive website based on the following design data:
+    def _create_html_prompt(self, scraped_data: Dict) -> str:
+        """Create a prompt for HTML generation, truncating large fields."""
+        return f"""
+        Generate a clean, semantic HTML structure for a website based on:
         
-        URL: {scraped_data['url']}
-        
-        Metadata:
-        - Title: {scraped_data['metadata']['title']}
-        - Description: {scraped_data['metadata']['description']}
-        
-        Color Scheme: {', '.join(scraped_data['metadata']['color_scheme'])}
-        Fonts: {', '.join(scraped_data['metadata']['fonts'])}
+        Title: {self._truncate_text(scraped_data['metadata'].get('title', ''), 50)}
+        Description: {self._truncate_text(scraped_data['metadata'].get('description', ''), 100)}
         
         Layout Structure:
-        {json.dumps(scraped_data['layout'], indent=2)}
+        - Header: {self._truncate_json(scraped_data['layout'].get('header', {}), 150)}
+        - Navigation: {self._truncate_json(scraped_data['layout'].get('navigation', {}), 150)}
+        - Main Content: {self._truncate_json(scraped_data['layout'].get('main', {}), 250)}
+        - Footer: {self._truncate_json(scraped_data['layout'].get('footer', {}), 150)}
         
-        Please generate:
-        1. HTML structure
-        2. CSS styles (including responsive design)
-        3. JavaScript for interactivity
-        
-        The code should be modern, clean, and follow best practices.
+        Focus on semantic HTML5 elements and accessibility.
         """
-        return prompt
 
-    def _parse_generated_code(self, code: str) -> Dict:
-        """Parse the generated code into HTML, CSS, and JavaScript components."""
-        # Basic parsing logic - can be enhanced based on actual LLM output format
-        sections = {
-            'html': '',
-            'css': '',
-            'javascript': ''
-        }
+    def _create_css_prompt(self, scraped_data: Dict) -> str:
+        """Create a prompt for CSS generation, truncating large fields."""
+        return f"""
+        Generate modern, responsive CSS styles for a website based on:
         
-        current_section = None
-        for line in code.split('\n'):
-            if line.strip().startswith('<!-- HTML -->'):
-                current_section = 'html'
-            elif line.strip().startswith('/* CSS */'):
-                current_section = 'css'
-            elif line.strip().startswith('// JavaScript'):
-                current_section = 'javascript'
-            elif current_section:
-                sections[current_section] += line + '\n'
+        Color Scheme: {', '.join(scraped_data['metadata'].get('color_scheme', [])[:3])}
+        Fonts: {', '.join(scraped_data['metadata'].get('fonts', [])[:2])}
         
-        return sections
+        Include:
+        1. Reset/normalize styles
+        2. Responsive grid system
+        3. Typography styles
+        4. Component styles
+        5. Media queries for mobile responsiveness
+        """
+
+    def _create_js_prompt(self, scraped_data: Dict) -> str:
+        """Create a prompt for JavaScript generation, truncating large fields."""
+        return f"""
+        Generate modern JavaScript code for a website based on:
+        
+        Layout Structure:
+        {self._truncate_json(scraped_data['layout'], 300)}
+        
+        Include:
+        1. Navigation functionality
+        2. Smooth scrolling
+        3. Responsive menu
+        4. Any interactive elements
+        """
 
     def save_generated_code(self, code: Dict, output_dir: str):
         """Save the generated code to files."""
